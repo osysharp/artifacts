@@ -1,0 +1,17 @@
+// The viewer.
+namespace Osysharp.Artifacts;
+
+using Osysharp.Storage;
+using Osysharp.Ui;
+
+/// ⭐ ONE VERSION OF AN ARTIFACT, shown in a sandboxed frame: an HTML prototype runs its own script in an origin of its
+/// own — never the app's — and reaches nothing; a picture, a PDF or a note is shown with no script at all. Its address
+/// is signed for the reader by the platform after their own read of the artifact; somebody who may not see it gets an
+/// empty frame.
+///
+///     ArtifactView(ArtifactVersions(artifact).Last(), h: 720);
+public component ArtifactView(FileVersion version, int h = 640) {
+  render {
+    ArtifactFrame(version: version.Id, title: version.Name + ", version " + version.Version, h: h);
+  }
+}

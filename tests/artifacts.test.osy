@@ -1,0 +1,67 @@
+// Osysharp.Artifacts — publishing, versions, comments and who sees them.
+using Osysharp.Identity;
+using Osysharp.Storage;
+using Osysharp.Artifacts;
+using Studio;
+
+/// The checkout design: Ann (a designer) and Rui (a reviewer) are on it; Bo is at the studio and not on it.
+[TestFixture]
+void Checkout() {
+  var ann = new Person { Email = "ann@studio.example", DisplayName = "Ann" };
+  var rui = new Person { Email = "rui@studio.example", DisplayName = "Rui" };
+  new Person { Email = "bo@studio.example", DisplayName = "Bo" };
+  new RoleGrant { Member = ann, Role = StudioRole.Designer };
+  var design = new Design { Title = "Checkout", Lead = ann };
+  new DesignMember { Design = design, Person = ann };
+  new DesignMember { Design = design, Person = rui };
+}
+
+principal Ann => Person.Single(p => p.Email == "ann@studio.example");
+principal Rui => Person.Single(p => p.Email == "rui@studio.example");
+principal Bo => Person.Single(p => p.Email == "bo@studio.example");
+
+Guid CheckoutId() { return Design.Single(d => d.Title == "Checkout").Id; }
+
+/// ⭐ A NEW VERSION KEEPS THE OLD. Ann publishes the checkout prototype and Rui comments on it; Ann publishes it again
+/// under the same name. It is the same artifact, now with two versions: the first is still there with its own bytes, the
+/// second is current, and Rui's comment stays on the version it was written on. A "picture" that is really a page is
+/// refused, and so is a new version of another type. Bo, who is not on the design, sees none of it.
+[Test(Checkout)]
+void a_new_version_keeps_the_old() {
+  Guid design;
+  Guid id;
+  runas (Ann) {
+    design = CheckoutId();
+    id = PublishArtifact("Design", design, "index.html", "text/html", Encoding.UTF8.GetBytes("<h1>One</h1>")).Id;
+    UnitOfWork.Commit();
+  }
+  runas (Rui) {
+    CommentOnArtifact(Artifact.Single(a => a.Id == id), 1, "The pay button is too small.", 0.5m, 0.25m);
+    UnitOfWork.Commit();
+  }
+  runas (Ann) {
+    var again = PublishArtifact("Design", design, "index.html", "text/html", Encoding.UTF8.GetBytes("<h1>Two</h1>"));
+    UnitOfWork.Commit();
+    Assert.Equal(id, again.Id);
+    Assert.Throws<ValidationException>(() => PublishArtifact("Design", design, "shot.png", "image/png", Encoding.UTF8.GetBytes("<script>1</script>")));
+    Assert.Throws<ValidationException>(() => PublishArtifact("Design", design, "index.html", "text/plain", Encoding.UTF8.GetBytes("two")));
+  }
+  runas (Rui) {
+    var artifact = Artifact.Single(a => a.Id == id);
+    var versions = ArtifactVersions(artifact);
+    Assert.Equal(2, versions.Count);
+    Assert.Equal(1, versions[0].Version);
+    Assert.Equal(Crypto.Sha256Hex("<h1>One</h1>"), versions[0].ContentHash);
+    Assert.Equal(2, versions[1].Version);
+    Assert.Equal(Crypto.Sha256Hex("<h1>Two</h1>"), versions[1].ContentHash);
+    Assert.Equal(versions[1].Id, artifact.File.CurrentVersion.Id);
+    Assert.Equal("<h1>Two</h1>", Encoding.UTF8.GetString(File.ReadAllBytes(artifact.File)));
+    var said = ArtifactComment.Where(c => c.Artifact == artifact).ToList();
+    Assert.Equal(1, said.Count);
+    Assert.Equal(1, said[0].Version);
+  }
+  runas (Bo) {
+    Assert.False(Artifact.Any(a => a.Id == id));
+    Assert.False(ArtifactComment.Any(c => c.Artifact.Id == id));
+  }
+}

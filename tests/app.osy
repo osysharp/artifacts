@@ -1,0 +1,10 @@
+// The producer's test project for Osysharp.Artifacts — a small design studio: a designer publishes prototypes on a
+// design, a reviewer comments, and somebody outside the design sees none of it.
+app ArtifactsKitTests {
+  model "model/**/*.osy";
+  tests "**/*.test.osy";
+  use Osysharp.Artifacts@0;
+  use Osysharp.Identity;
+  use Osysharp.Storage;
+  use Osysharp.Ui;
+}

@@ -1,0 +1,38 @@
+// A design studio: designs, the people on each, and the kit's questions answered.
+namespace Studio;
+
+using Osysharp.Identity;
+using Osysharp.Artifacts;
+
+[Role] enum StudioRole { Authenticator, Designer }
+
+partial entity RoleGrant { security { allow read when IsAuthenticated; } }
+
+policy IsDesigner => RoleGrant.Any(g => g.Member == user && g.Role == StudioRole.Designer);
+
+/// Somebody at the studio.
+entity Person : Principal {
+  security {
+    allow read when IsAuthenticated || IsAuthenticator;
+    allow create when IsAuthenticator;
+  }
+}
+
+/// A design, and who works on it.
+entity Design {
+  [Required, MaxLength(80)] string Title;
+  [Required] Person Lead;
+  [ForeignKey(Design)] DesignMember[] Members;
+  security { allow read, create when IsAuthenticated; }
+}
+
+entity DesignMember {
+  [Required] Design Design;
+  [Required] Person Person;
+  security { allow read, create when IsAuthenticated; }
+}
+
+// Whoever is on a design sees its artifacts and comments on them; a designer on it publishes.
+policy ReadsArtifactsOf(string subjectType, Guid subjectId) =>
+  subjectType == "Design" && DesignMember.Any(m => m.Design.Id == subjectId && m.Person == user);
+policy WritesArtifactsOf(string subjectType, Guid subjectId) => IsDesigner && ReadsArtifactsOf(subjectType, subjectId);

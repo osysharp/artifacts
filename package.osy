@@ -1,0 +1,29 @@
+// Osysharp.Artifacts — things made for review, kept with every version: an agent-made HTML prototype, a picture, a PDF,
+// a markdown note. An `Artifact` belongs to a row of the app (its subject: a design, a case, a ticket) and holds one
+// file; publishing under the same name again makes a new version of that file (`File.Supersede`), and every old version
+// stays, listed and viewable — designs are retained. People comment on one version, optionally at a point of it.
+//
+// ⚑ THE SAFE VIEWER. Artifact bytes are served only by the platform's own route, `/_artifacts/{version}/{name}`, and every
+//   answer is marked with the CSP `sandbox` directive: the browser gives the document an OPAQUE origin even when the
+//   address is opened directly, so script in an agent-made page reads none of the app's cookies or storage, and
+//   `connect-src 'none'` with no forms, popups or navigation leaves it no way to reach the app. `ArtifactView` shows a
+//   version in an `ArtifactFrame`, whose `sandbox="allow-scripts"` sets it a second time. Only HTML runs script; every
+//   other type is sandboxed with none (SECURITY-INVARIANT(artifacts-are-served-only-sandboxed)).
+//
+// ⚑ THE APP SAYS WHO: `policy ReadsArtifactsOf(string subjectType, Guid subjectId)` (who sees a subject's artifacts),
+//   `WritesArtifactsOf` (who publishes on it) and `CommentsOnArtifactsOf` (who comments; readers, unless the app says).
+//   Nobody, until the app says. Types are allow-listed and their bytes sniffed; a version is at most 25 MB. An
+//   organisation's policy may lower that cap and forbid HTML prototypes outright (`ArtifactsSetup`).
+package Osysharp.Artifacts {
+  version     "0.1.0";
+  minPlatform "0.19.14";
+  summary     "artifacts made for review — HTML prototypes, pictures, PDFs, notes — kept with every version, commented per version, and shown in a sandboxed viewer that never runs as the app.";
+
+  // A comment says what its author wrote about the work: personal content.
+  personal Content;
+
+  model "model/*.osy";
+  tests "tests";
+  use Osysharp.Storage;
+  use Osysharp.Ui;
+}
