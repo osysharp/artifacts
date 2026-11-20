@@ -15,15 +15,27 @@ policy WritesArtifactsOf(string subjectType, Guid subjectId) => …;
 
 var a = PublishArtifact("Design", design.Id, "index.html", "text/html", bytes);   // again → a new version; old ones kept
 ArtifactView(a.File.CurrentVersion, h: 720);
+
+// A prototype with files: the entry loads them by relative path, served beside it.
+PublishArtifactBundle("Design", design.Id, "index.html", page, files);   // files: List<ArtifactFile> { Path, ContentType, Bytes }
+
+// Each artifact on an origin of its own, on a domain that is not the app's site.
+app.Artifacts = new ArtifactsSetup { ViewerBase = "osyrin.dev" };
 ```
 
 - **Versions.** An artifact holds one `FileAsset`; publishing under the same name supersedes it (`File.Supersede`), so
   every earlier version stays (`ArtifactVersions`).
-- **Safe viewer.** Bytes come only from the platform's `/_artifacts/{version}/{name}`, marked with the CSP `sandbox`
-  directive (an opaque origin even when opened directly; no network, forms, popups or navigation; script for HTML only),
-  in an `ArtifactFrame` with `sandbox="allow-scripts"`. Its address is signed for the reader after their own read.
-- **Checked uploads.** Ten allow-listed types, bytes sniffed, ≤ 25 MB; an organisation's policy may lower the cap and
-  forbid HTML prototypes (`ArtifactsSetup`).
+- **Safe viewer.** Bytes come only from the platform's `/_artifacts/{version}/{token}/{name}`, marked with the CSP
+  `sandbox` directive (an opaque origin even when opened directly; no network, forms, popups or navigation; script for
+  HTML only), in an `ArtifactFrame` with `sandbox="allow-scripts"`. Its address is signed for the reader after their
+  own read.
+- **Its own origin.** With `ArtifactsSetup.ViewerBase` (or `ArtifactView(viewer:)`), each artifact is served from
+  `https://<artifact>-<placement>.<base>/…`: never the app's site, never another artifact's origin, nothing else on that
+  host, a token for that host alone, framed only by the app's page.
+- **Bundles.** `PublishArtifactBundle`: an HTML entry plus scripts, styles, pictures and fonts (≤ 300 files, ≤ 8 deep,
+  the whole ≤ `MaxBytes`), loaded by relative path under the same signed address. No fetches (`connect-src 'none'`).
+- **Checked uploads.** Ten allow-listed types, bytes sniffed, ≤ 25 MB; an organisation's policy may lower the cap,
+  forbid HTML prototypes and fix the viewer base (`ArtifactsSetup`).
 - **Comments** on one version, optionally at a point of it.
 
 Reference: `osy docs ui-artifacts-kit`. Tests: `osy test kits/artifacts/tests`.
@@ -110,6 +122,67 @@ void a_new_version_keeps_the_old() {
   runas (Bo) {
     Assert.False(Artifact.Any(a => a.Id == id));
     Assert.False(ArtifactComment.Any(c => c.Artifact.Id == id));
+  }
+}
+```
+
+From [`tests/artifacts.test.osy`](tests/artifacts.test.osy).
+
+```osy
+using Osysharp.Identity;
+using Osysharp.Storage;
+using Osysharp.Artifacts;
+using Studio;
+
+[Test(Checkout)]
+void a_bundles_relative_files_load_under_its_entrys_address() {
+  var page = "<!doctype html><link rel=stylesheet href=\"css/site.css\"><img src=\"img/dot.png\"><script src=\"app.js\"></script>";
+  var dot = Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==");
+  Guid id;
+  Guid version;
+  runas (Ann) {
+    var design = CheckoutId();
+    var files = new List<ArtifactFile>();
+    files.Add(new ArtifactFile { Path = "app.js", ContentType = "text/javascript", Bytes = Encoding.UTF8.GetBytes("document.title = 'ran';") });
+    files.Add(new ArtifactFile { Path = "css/site.css", ContentType = "text/css", Bytes = Encoding.UTF8.GetBytes("body { margin: 0 }") });
+    files.Add(new ArtifactFile { Path = "img/dot.png", ContentType = "image/png", Bytes = dot });
+    id = PublishArtifactBundle("Design", design, "index.html", Encoding.UTF8.GetBytes(page), files).Id;
+    UnitOfWork.Commit();
+
+    var bad = new List<ArtifactFile>();
+    bad.Add(new ArtifactFile { Path = "../secret.js", ContentType = "text/javascript", Bytes = Encoding.UTF8.GetBytes("1") });
+    Assert.Throws<ValidationException>(() => PublishArtifactBundle("Design", design, "other.html", Encoding.UTF8.GetBytes(page), bad));
+    var json = new List<ArtifactFile>();
+    json.Add(new ArtifactFile { Path = "data.json", ContentType = "application/json", Bytes = Encoding.UTF8.GetBytes("{}") });
+    Assert.Throws<ValidationException>(() => PublishArtifactBundle("Design", design, "other.html", Encoding.UTF8.GetBytes(page), json));
+    var lie = new List<ArtifactFile>();
+    lie.Add(new ArtifactFile { Path = "app.js", ContentType = "text/javascript", Bytes = dot });
+    Assert.Throws<ValidationException>(() => PublishArtifactBundle("Design", design, "other.html", Encoding.UTF8.GetBytes(page), lie));
+  }
+  runas (Rui) {
+    var artifact = Artifact.Single(a => a.Id == id);
+    Assert.Equal(3, ArtifactAssets(artifact, artifact.File.CurrentVersion.Version).Count);
+    version = artifact.File.CurrentVersion.Id;
+    var url = SignedFor(version, Api.TokenFor(Rui));
+    Assert.StartsWith("/_artifacts/" + artifact.File.CurrentVersion.Id.ToString() + "/", url);
+    Assert.EndsWith("/index.html", url);
+    var folder = url.Substring(0, url.Length - "index.html".Length);
+
+    var entry = Api.Get(url);
+    Assert.Equal(200, entry.StatusCode);
+    Assert.Equal(page, entry.Body);
+    var script = Api.Get(folder + "app.js");
+    Assert.Equal(200, script.StatusCode);
+    Assert.Equal("document.title = 'ran';", script.Body);
+    Assert.StartsWith("text/javascript", HeaderOf(script, "Content-Type"));
+    Assert.StartsWith("sandbox", HeaderOf(script, "Content-Security-Policy"));
+    Assert.Contains("connect-src 'none'", HeaderOf(entry, "Content-Security-Policy"));
+    Assert.Equal(200, Api.Get(folder + "css/site.css").StatusCode);
+    Assert.Equal(200, Api.Get(folder + "img/dot.png").StatusCode);
+    Assert.Equal(404, Api.Get(folder + "img/other.png").StatusCode);
+  }
+  runas (Bo) {
+    Assert.Equal("", SignedFor(version, Api.TokenFor(Bo)));
   }
 }
 ```

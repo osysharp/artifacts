@@ -65,3 +65,76 @@ void a_new_version_keeps_the_old() {
     Assert.False(ArtifactComment.Any(c => c.Artifact.Id == id));
   }
 }
+
+/// What the sign endpoint answers: the address the frame loads.
+class SignedArtifact { public string Url = ""; }
+
+/// The signed address of an artifact's current version, as `who` would get it for a frame — or "" when refused.
+string SignedFor(Guid version, string bearer) {
+  var r = Api.Post("/api/artifacts/" + version.ToString() + "/sign", "", bearer: bearer);
+  if (r.StatusCode != 200) { return ""; }
+  return JsonSerializer.Deserialize<SignedArtifact>(r.Body).Url;
+}
+
+/// The value of a response header, or "".
+string HeaderOf(ApiResponse r, string name) {
+  var h = r.Headers.FirstOrDefault(x => x.Name.ToLower() == name.ToLower());
+  return h == null ? "" : h!.Value;
+}
+
+/// ⭐ A BUNDLE'S RELATIVE FILES LOAD UNDER ITS ENTRY'S ADDRESS. Ann publishes a prototype whose page loads `app.js`,
+/// `css/site.css` and `img/dot.png` by relative address. Rui's signed address serves the page, and each file beside it
+/// under the same token — every answer sandboxed with no network. A path the bundle does not hold is not found, and Bo,
+/// who is not on the design, gets no address at all. A bad path, a type a bundle may not hold, and a "script" that is
+/// really a picture are refused at publish.
+[Test(Checkout)]
+void a_bundles_relative_files_load_under_its_entrys_address() {
+  var page = "<!doctype html><link rel=stylesheet href=\"css/site.css\"><img src=\"img/dot.png\"><script src=\"app.js\"></script>";
+  var dot = Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==");
+  Guid id;
+  Guid version;
+  runas (Ann) {
+    var design = CheckoutId();
+    var files = new List<ArtifactFile>();
+    files.Add(new ArtifactFile { Path = "app.js", ContentType = "text/javascript", Bytes = Encoding.UTF8.GetBytes("document.title = 'ran';") });
+    files.Add(new ArtifactFile { Path = "css/site.css", ContentType = "text/css", Bytes = Encoding.UTF8.GetBytes("body { margin: 0 }") });
+    files.Add(new ArtifactFile { Path = "img/dot.png", ContentType = "image/png", Bytes = dot });
+    id = PublishArtifactBundle("Design", design, "index.html", Encoding.UTF8.GetBytes(page), files).Id;
+    UnitOfWork.Commit();
+
+    var bad = new List<ArtifactFile>();
+    bad.Add(new ArtifactFile { Path = "../secret.js", ContentType = "text/javascript", Bytes = Encoding.UTF8.GetBytes("1") });
+    Assert.Throws<ValidationException>(() => PublishArtifactBundle("Design", design, "other.html", Encoding.UTF8.GetBytes(page), bad));
+    var json = new List<ArtifactFile>();
+    json.Add(new ArtifactFile { Path = "data.json", ContentType = "application/json", Bytes = Encoding.UTF8.GetBytes("{}") });
+    Assert.Throws<ValidationException>(() => PublishArtifactBundle("Design", design, "other.html", Encoding.UTF8.GetBytes(page), json));
+    var lie = new List<ArtifactFile>();
+    lie.Add(new ArtifactFile { Path = "app.js", ContentType = "text/javascript", Bytes = dot });
+    Assert.Throws<ValidationException>(() => PublishArtifactBundle("Design", design, "other.html", Encoding.UTF8.GetBytes(page), lie));
+  }
+  runas (Rui) {
+    var artifact = Artifact.Single(a => a.Id == id);
+    Assert.Equal(3, ArtifactAssets(artifact, artifact.File.CurrentVersion.Version).Count);
+    version = artifact.File.CurrentVersion.Id;
+    var url = SignedFor(version, Api.TokenFor(Rui));
+    Assert.StartsWith("/_artifacts/" + artifact.File.CurrentVersion.Id.ToString() + "/", url);
+    Assert.EndsWith("/index.html", url);
+    var folder = url.Substring(0, url.Length - "index.html".Length);
+
+    var entry = Api.Get(url);
+    Assert.Equal(200, entry.StatusCode);
+    Assert.Equal(page, entry.Body);
+    var script = Api.Get(folder + "app.js");
+    Assert.Equal(200, script.StatusCode);
+    Assert.Equal("document.title = 'ran';", script.Body);
+    Assert.StartsWith("text/javascript", HeaderOf(script, "Content-Type"));
+    Assert.StartsWith("sandbox", HeaderOf(script, "Content-Security-Policy"));
+    Assert.Contains("connect-src 'none'", HeaderOf(entry, "Content-Security-Policy"));
+    Assert.Equal(200, Api.Get(folder + "css/site.css").StatusCode);
+    Assert.Equal(200, Api.Get(folder + "img/dot.png").StatusCode);
+    Assert.Equal(404, Api.Get(folder + "img/other.png").StatusCode);
+  }
+  runas (Bo) {
+    Assert.Equal("", SignedFor(version, Api.TokenFor(Bo)));
+  }
+}
