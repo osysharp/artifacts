@@ -15,7 +15,7 @@
 //   Nobody, until the app says. Types are allow-listed and their bytes sniffed; a version is at most 25 MB. An
 //   organisation's policy may lower that cap and forbid HTML prototypes outright (`ArtifactsSetup`).
 package Osysharp.Artifacts {
-  version     "0.5.0";
+  version     "0.6.0";
   minPlatform "0.23.1";
   summary     "artifacts made for review — HTML prototypes, pictures, PDFs, notes — kept with every version, commented per version, and shown in a sandboxed viewer that never runs as the app.";
 
