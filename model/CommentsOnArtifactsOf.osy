@@ -1,0 +1,6 @@
+namespace Osysharp.Artifacts;
+
+using Osysharp.Storage;
+
+/// ⭐ WHO COMMENTS ON A SUBJECT'S ARTIFACTS, and marks a comment resolved. Whoever reads them, until the app says.
+virtual policy CommentsOnArtifactsOf(string subjectType, Guid subjectId) => ReadsArtifactsOf(subjectType, subjectId);

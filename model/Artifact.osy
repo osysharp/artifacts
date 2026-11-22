@@ -1,0 +1,128 @@
+namespace Osysharp.Artifacts;
+
+using Osysharp.Storage;
+
+/// One thing made for review, on one row of the app. Its file's versions are its versions: publishing under the same
+/// name on the same subject again supersedes the file, and the old versions are kept (`Versions()`).
+public entity Artifact {
+  [Required, Immutable, MaxLength(120), Index] string SubjectType;
+  [Required, Immutable, Index] Guid SubjectId;
+  /// Its name on the subject — `index.html`, `flow.png`. One artifact per name per subject.
+  [Required, Immutable, MaxLength(200)] string Name;
+  [Immutable] ArtifactKind Kind = ArtifactKind.Text;
+  [Required, Immutable, MaxLength(100)] string ContentType;
+  /// The file: its current content, and every version it has had.
+  [Required, Immutable, Attachment] FileAsset File;
+  /// The work handed outside that made it, when one did (`Osysharp.Agents`' `AgentDelegation`, by id).
+  Guid? Delegation;
+  [CreatedBy] Guid? CreatedBy;
+  [CreatedAt] DateTime CreatedAt;
+  DateTime UpdatedAt = DateTime.UtcNow;
+
+  security {
+    allow read when IsAuthenticated where ReadsArtifactsOf(SubjectType, SubjectId);
+    allow create, update when IsAuthenticated where WritesArtifactsOf(SubjectType, SubjectId);
+    deny create, update except via Artifact.Publish;
+    deny delete;
+  }
+
+  /// The types an artifact may be.
+  public static List<string> Types() {
+    return ["text/html", "image/png", "image/jpeg", "image/webp", "image/gif", "image/svg+xml", "application/pdf",
+            "text/markdown", "text/plain", "application/json"];
+  }
+
+  /// ⭐ PUBLISH AN ARTIFACT ON A SUBJECT — or, under a name it already has there, a new version of it; the old ones are
+  /// kept. The type must be one of `Types()` and the bytes what the type says (a "picture" that is really HTML is
+  /// refused); a version is at most `ArtifactsSetup.MaxBytes` (25 MB). A new version keeps the artifact's type.
+  [Server, Authorize(IsAuthenticated)]
+  public static Artifact Publish(string subjectType, Guid subjectId, string name, string contentType, byte[] bytes,
+                                  Guid? delegation = null) {
+    var shown = name.Trim();
+    if (shown == "" || shown.Length > 200 || shown.Contains("/") || shown.Contains("\\") || shown.Contains("\n") || shown.StartsWith(".")) {
+      throw new ValidationException("An artifact is named by a plain name of at most 200 characters: `index.html`.");
+    }
+    if (subjectType.Trim() == "" || subjectType.Length > 120) { throw new ValidationException("Say what the artifact is on: the subject's type, in at most 120 characters."); }
+    var type = contentType.Trim().ToLower();
+    if (!Artifact.Types().Contains(type)) {
+      throw new ValidationException($"{type} is not a type an artifact may be: " + string.Join(", ", Artifact.Types()) + ".");
+    }
+    var setup = App.Setting<ArtifactsSetup>();
+    if (type == "text/html" && !setup.AllowPrototypes) {
+      throw new ValidationException("Your organization's policy does not allow HTML prototypes to be published.");
+    }
+    var cap = setup.MaxBytes < 26214400 ? setup.MaxBytes : 26214400;
+    if (bytes.Length == 0) { throw new ValidationException("An artifact holds something."); }
+    if (bytes.Length > cap) { throw new ValidationException($"An artifact version is at most {cap / 1048576} MB."); }
+    var lie = Artifact.BytesLie(type, bytes);
+    if (lie != "") { throw new ValidationException(lie); }
+
+    var kept = Artifact.FirstOrDefault(a => a.SubjectType == subjectType && a.SubjectId == subjectId && a.Name == shown);
+    if (kept != null) {
+      if (kept!.ContentType != type) {
+        throw new ValidationException($"{shown} is {kept!.ContentType}; a new version keeps its type. Publish {type} under a name of its own.");
+      }
+      File.Supersede(kept!.File, bytes);
+      kept!.UpdatedAt = DateTime.UtcNow;
+      if (delegation != null) { kept!.Delegation = delegation; }
+      return kept!;
+    }
+    return new Artifact {
+      SubjectType = subjectType, SubjectId = subjectId, Name = shown, Kind = Artifact.KindOf(type), ContentType = type,
+      File = File.Create(shown, type, bytes), Delegation = delegation, UpdatedAt = DateTime.UtcNow,
+    };
+  }
+
+  /// The files of one version of a bundled artifact, by path. Empty for a single page.
+  public List<ArtifactAsset> Assets(int version) {
+    return ArtifactAsset.Where(a => a.Artifact == this && a.Version == version).OrderBy(a => a.Path).ToList();
+  }
+
+  /// Every version an artifact has had, the first first — the current one included.
+  public List<FileVersion> Versions() {
+    return this.File.Versions.OrderBy(v => v.Version).ToList();
+  }
+
+  public static ArtifactKind KindOf(string type) {
+    if (type == "text/html") { return ArtifactKind.Html; }
+    if (type.StartsWith("image/")) { return ArtifactKind.Image; }
+    if (type == "application/pdf") { return ArtifactKind.Pdf; }
+    if (type == "text/markdown") { return ArtifactKind.Markdown; }
+    if (type == "application/json") { return ArtifactKind.Json; }
+    return ArtifactKind.Text;
+  }
+
+  /// What is wrong with an artifact's bytes for the type it says it is — or "": they are what it says.
+  public static string BytesLie(string contentType, byte[] b) {
+    var magic = Artifact.FormatOf(b);
+    if (contentType == "image/png" || contentType == "image/jpeg" || contentType == "image/webp" || contentType == "image/gif"
+        || contentType == "application/pdf" || contentType == "font/woff" || contentType == "font/woff2") {
+      return magic == contentType ? "" : $"It is declared {contentType}, and its bytes are not.";
+    }
+    // Every other allowed type is text: never a binary format, and UTF-8 throughout.
+    if (magic != "" || !Artifact.IsText(b)) { return $"It is declared {contentType}, and its bytes are not text."; }
+    if (contentType == "image/svg+xml" && !Encoding.UTF8.GetString(b).Contains("<svg")) { return "It is declared an SVG picture, and holds none."; }
+    return "";
+  }
+
+  /// The binary format the bytes begin as, by their first bytes — or "".
+  public static string FormatOf(byte[] b) {
+    if (b.Length >= 8 && b[0] == 137 && b[1] == 80 && b[2] == 78 && b[3] == 71) { return "image/png"; }
+    if (b.Length >= 3 && b[0] == 255 && b[1] == 216 && b[2] == 255) { return "image/jpeg"; }
+    if (b.Length >= 6 && b[0] == 71 && b[1] == 73 && b[2] == 70 && b[3] == 56) { return "image/gif"; }
+    if (b.Length >= 12 && b[0] == 82 && b[1] == 73 && b[2] == 70 && b[3] == 70 && b[8] == 87 && b[9] == 69 && b[10] == 66 && b[11] == 80) {
+      return "image/webp";
+    }
+    if (b.Length >= 5 && b[0] == 37 && b[1] == 80 && b[2] == 68 && b[3] == 70 && b[4] == 45) { return "application/pdf"; }
+    if (b.Length >= 4 && b[0] == 80 && b[1] == 75 && (b[2] == 3 || b[2] == 5)) { return "application/zip"; }
+    if (b.Length >= 4 && b[0] == 119 && b[1] == 79 && b[2] == 70 && b[3] == 70) { return "font/woff"; }
+    if (b.Length >= 4 && b[0] == 119 && b[1] == 79 && b[2] == 70 && b[3] == 50) { return "font/woff2"; }
+    return "";
+  }
+
+  /// Text: no NUL, and the whole reads as UTF-8 without a replacement character.
+  public static bool IsText(byte[] b) {
+    for (var i = 0; i < b.Length; i++) { if (b[i] == 0) { return false; } }
+    return !Encoding.UTF8.GetString(b).Contains("�");
+  }
+}

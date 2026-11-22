@@ -1,0 +1,6 @@
+namespace Osysharp.Artifacts;
+
+using Osysharp.Storage;
+
+/// ⭐ WHO PUBLISHES ON A SUBJECT — a new artifact, or a new version of one. Nobody, until the app says.
+virtual policy WritesArtifactsOf(string subjectType, Guid subjectId) => false;

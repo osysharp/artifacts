@@ -7,12 +7,12 @@ using Osysharp.Ui;
 /// ⭐ ONE VERSION OF AN ARTIFACT, shown in a sandboxed frame: an HTML prototype runs its own script in an origin of its
 /// own — never the app's — and reaches nothing; a picture, a PDF or a note is shown with no script at all. Its address
 /// is signed for the reader by the platform after their own read of the artifact; somebody who may not see it gets an
-/// empty frame. A bundled prototype's files (`PublishArtifactBundle`) load beside it by their relative paths.
+/// empty frame. A bundled prototype's files (`ArtifactAsset.PublishBundle`) load beside it by their relative paths.
 ///
 /// With a viewer base (`ArtifactsSetup.ViewerBase`, or `viewer:` here) the artifact is served from an origin of its own,
 /// `https://<artifact>-<placement>.<base>/…` — never the app's site, never another artifact's origin.
 ///
-///     ArtifactView(ArtifactVersions(artifact).Last(), h: 720);
+///     ArtifactView(artifact.Versions().Last(), h: 720);
 public component ArtifactView(FileVersion version, int h = 640, string? viewer = null) {
   render {
     ArtifactFrame(version: version.Id, title: version.Name + ", version " + version.Version, h: h,

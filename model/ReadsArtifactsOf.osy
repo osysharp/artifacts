@@ -1,0 +1,9 @@
+namespace Osysharp.Artifacts;
+
+using Osysharp.Storage;
+
+/// ⭐ WHO SEES A SUBJECT'S ARTIFACTS — every version and every comment on them. `subjectType` is the app's own name for
+/// the row (`"DesignItem"`), `subjectId` its id: `policy ReadsArtifactsOf(string subjectType, Guid subjectId) =>
+/// subjectType == "DesignItem" && DesignItem.Any(d => d.Id == subjectId && d.Team.Members.Any(m => m == user));`.
+/// Nobody, until the app says.
+virtual policy ReadsArtifactsOf(string subjectType, Guid subjectId) => false;

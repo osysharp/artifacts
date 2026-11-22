@@ -1,0 +1,17 @@
+namespace Osysharp.Artifacts;
+
+using Osysharp.Storage;
+
+/// The kit's settings. An organisation's policy may bound both for every app it runs: lower the cap, and forbid HTML
+/// prototypes (pages that run their own script, sandboxed) altogether. Nothing here is secret, so pages read it directly.
+[AppSetting("Artifacts", Browser = true)]
+public class ArtifactsSetup {
+  /// The largest one version may be, in bytes — never more than 25 MB.
+  [OrgPolicy(OrgPolicyMode.Range, Name = "Artifact version size (bytes)", Area = OrgPolicyArea.Agents)] public long MaxBytes = 26214400;
+  /// Whether an HTML prototype may be published at all.
+  [OrgPolicy(OrgPolicyMode.Lock, Name = "HTML prototypes may be published", Area = OrgPolicyArea.Agents)] public bool AllowPrototypes = true;
+  /// The viewer base artifacts are shown from — a domain of their own, never the app's site (`osyrin.dev`): each artifact
+  /// is then served at `https://<artifact>-<placement>.<base>/…`, an origin of its own. Empty: the app's own sandboxed
+  /// route. Host name and optional port, no scheme. A base that shares the app's site is refused (the app's route is used).
+  [OrgPolicy(OrgPolicyMode.Lock, Name = "Artifact viewer base", Area = OrgPolicyArea.Agents)] public string ViewerBase = "";
+}

@@ -1,0 +1,103 @@
+namespace Osysharp.Artifacts;
+
+using Osysharp.Storage;
+
+/// One file of a bundled artifact's version beside its entry page — a script, a stylesheet, a picture, a font — at a
+/// relative path the entry loads it by (`app.js`, `img/logo.png`). It belongs to one version; a new version brings its own.
+public entity ArtifactAsset {
+  [Required, Immutable, Index] Artifact Artifact;
+  /// The artifact's version it is part of.
+  [Required, Immutable] int Version;
+  /// Its path beside the entry: relative, `/`-separated, no `..`.
+  [Required, Immutable, MaxLength(200)] string Path;
+  [Required, Immutable, MaxLength(100)] string ContentType;
+  [Required, Immutable, Attachment] FileAsset File;
+
+  security {
+    allow read when IsAuthenticated where ReadsArtifactsOf(Artifact.SubjectType, Artifact.SubjectId);
+    allow create when IsAuthenticated where WritesArtifactsOf(Artifact.SubjectType, Artifact.SubjectId);
+    deny create except via ArtifactAsset.PublishBundle;
+    deny update;
+    deny delete;
+  }
+
+  /// One file handed to `PublishBundle`: where it sits beside the entry, its type, its bytes.
+  public class BundleFile {
+    public string Path = "";
+    public string ContentType = "";
+    public byte[] Bytes;
+  }
+
+  /// The types a bundle's file may be. No JSON: an artifact may fetch nothing (`connect-src 'none'`), so nothing could load it.
+  public static List<string> Types() {
+    return ["text/html", "text/css", "text/javascript", "image/png", "image/jpeg", "image/webp", "image/gif", "image/svg+xml",
+            "font/woff", "font/woff2"];
+  }
+
+  /// ⭐ PUBLISH A BUNDLED PROTOTYPE — an entry page and the files it loads by relative path (`app.js`, `css/site.css`,
+  /// `img/logo.png`), as one version: a new version of the artifact `name` (an HTML page) on the subject, its files kept
+  /// with that version. Paths are relative, `/`-separated, made of letters, digits, `.`, `_` and `-`, at most 8 deep and
+  /// 200 long, never `..`; at most 300 files; types from `Types()`, bytes what the type says; the whole bundle
+  /// at most `ArtifactsSetup.MaxBytes`. The entry must load its files by RELATIVE address (`./app.js`, not `/app.js`).
+  [Server, Authorize(IsAuthenticated)]
+  public static Artifact PublishBundle(string subjectType, Guid subjectId, string name, byte[] entry, List<ArtifactAsset.BundleFile> files,
+                                        Guid? delegation = null) {
+    if (files.Count > 300) { throw new ValidationException("A bundle holds at most 300 files beside its entry."); }
+    var setup = App.Setting<ArtifactsSetup>();
+    var cap = setup.MaxBytes < 26214400 ? setup.MaxBytes : 26214400;
+    long total = entry.Length;
+    var seen = new List<string>();
+    foreach (var f in files) {
+      var path = f.Path.Trim();
+      var refusal = ArtifactAsset.PathRefusal(path);
+      if (refusal != "") { throw new ValidationException(refusal); }
+      if (path == name.Trim() || seen.Contains(path)) { throw new ValidationException($"{path} is in the bundle twice."); }
+      seen.Add(path);
+      var type = f.ContentType.Trim().ToLower();
+      if (type == "application/javascript") { type = "text/javascript"; }
+      if (!ArtifactAsset.Types().Contains(type)) {
+        throw new ValidationException($"{path}: {type} is not a type a bundle's file may be: " + string.Join(", ", ArtifactAsset.Types()) + ".");
+      }
+      if (f.Bytes.Length == 0) { throw new ValidationException($"{path} is empty."); }
+      var lie = Artifact.BytesLie(type, f.Bytes);
+      if (lie != "") { throw new ValidationException($"{path}: {lie}"); }
+      total = total + f.Bytes.Length;
+    }
+    if (total > cap) { throw new ValidationException($"A bundle is at most {cap / 1048576} MB, its entry and files together."); }
+
+    var kept = Artifact.FirstOrDefault(a => a.SubjectType == subjectType && a.SubjectId == subjectId && a.Name == name.Trim());
+    var version = kept == null ? 1 : (kept!).Versions().Last().Version + 1;
+    var artifact = Artifact.Publish(subjectType, subjectId, name, "text/html", entry, delegation);
+    foreach (var f in files) {
+      var path = f.Path.Trim();
+      var type = f.ContentType.Trim().ToLower();
+      if (type == "application/javascript") { type = "text/javascript"; }
+      new ArtifactAsset { Artifact = artifact, Version = version, Path = path, ContentType = type,
+                          File = File.Create(ArtifactAsset.Leaf(path), type, f.Bytes) };
+    }
+    return artifact;
+  }
+
+  /// What is wrong with a bundle file's path — or "".
+  public static string PathRefusal(string path) {
+    if (path == "" || path.Length > 200) { return "A bundle's file has a relative path of at most 200 characters: `img/logo.png`."; }
+    var parts = path.Split("/");
+    if (parts.Length > 8) { return $"{path} is more than 8 folders deep."; }
+    foreach (var part in parts) {
+      if (part == "" || part.StartsWith(".")) { return $"{path} is not a plain relative path: no empty, `.` or `..` parts, and nothing hidden."; }
+      for (var i = 0; i < part.Length; i++) {
+        var c = part.Substring(i, 1);
+        if (!("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-".Contains(c))) {
+          return $"{path}: a path is made of letters, digits, `.`, `_`, `-` and `/`.";
+        }
+      }
+    }
+    return "";
+  }
+
+  /// The last part of a path — the stored file's name.
+  public static string Leaf(string path) {
+    var parts = path.Split("/");
+    return parts[parts.Length - 1];
+  }
+}

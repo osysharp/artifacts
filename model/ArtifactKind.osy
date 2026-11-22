@@ -1,0 +1,6 @@
+namespace Osysharp.Artifacts;
+
+using Osysharp.Storage;
+
+/// What an artifact is — fixed by the type it was first published as.
+public enum ArtifactKind { Html, Image, Pdf, Markdown, Text, Json }

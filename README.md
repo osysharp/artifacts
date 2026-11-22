@@ -5,7 +5,7 @@ every version, commented per version, and shown in a viewer the browser sandboxe
 
 ```osy
 app Studio {
-  use Osysharp.Artifacts@0;
+  use Osysharp.Artifacts@1;
   use Osysharp.Storage;
   use Osysharp.Ui;
 }
@@ -13,18 +13,18 @@ app Studio {
 policy ReadsArtifactsOf(string subjectType, Guid subjectId) => …;
 policy WritesArtifactsOf(string subjectType, Guid subjectId) => …;
 
-var a = PublishArtifact("Design", design.Id, "index.html", "text/html", bytes);   // again → a new version; old ones kept
+var a = Artifact.Publish("Design", design.Id, "index.html", "text/html", bytes);   // again → a new version; old ones kept
 ArtifactView(a.File.CurrentVersion, h: 720);
 
 // A prototype with files: the entry loads them by relative path, served beside it.
-PublishArtifactBundle("Design", design.Id, "index.html", page, files);   // files: List<ArtifactFile> { Path, ContentType, Bytes }
+ArtifactAsset.PublishBundle("Design", design.Id, "index.html", page, files);   // files: List<ArtifactAsset.BundleFile> { Path, ContentType, Bytes }
 
 // Each artifact on an origin of its own, on a domain that is not the app's site.
 app.Artifacts = new ArtifactsSetup { ViewerBase = "osyrin.dev" };
 ```
 
 - **Versions.** An artifact holds one `FileAsset`; publishing under the same name supersedes it (`File.Supersede`), so
-  every earlier version stays (`ArtifactVersions`).
+  every earlier version stays (`artifact.Versions()`).
 - **Safe viewer.** Bytes come only from the platform's `/_artifacts/{version}/{token}/{name}`, marked with the CSP
   `sandbox` directive (an opaque origin even when opened directly; no network, forms, popups or navigation; script for
   HTML only), in an `ArtifactFrame` with `sandbox="allow-scripts"`. Its address is signed for the reader after their
@@ -32,11 +32,13 @@ app.Artifacts = new ArtifactsSetup { ViewerBase = "osyrin.dev" };
 - **Its own origin.** With `ArtifactsSetup.ViewerBase` (or `ArtifactView(viewer:)`), each artifact is served from
   `https://<artifact>-<placement>.<base>/…`: never the app's site, never another artifact's origin, nothing else on that
   host, a token for that host alone, framed only by the app's page.
-- **Bundles.** `PublishArtifactBundle`: an HTML entry plus scripts, styles, pictures and fonts (≤ 300 files, ≤ 8 deep,
+- **Bundles.** `ArtifactAsset.PublishBundle`: an HTML entry plus scripts, styles, pictures and fonts (≤ 300 files, ≤ 8 deep,
   the whole ≤ `MaxBytes`), loaded by relative path under the same signed address. No fetches (`connect-src 'none'`).
 - **Checked uploads.** Ten allow-listed types, bytes sniffed, ≤ 25 MB; an organisation's policy may lower the cap,
   forbid HTML prototypes and fix the viewer base (`ArtifactsSetup`).
 - **Comments** on one version, optionally at a point of it.
+
+1.0.0 grouped the calls into the types they are about (`PublishArtifact` → `Artifact.Publish`): see CHANGELOG.md.
 
 Reference: `osy docs ui-artifacts-kit`. Tests: `osy test kits/artifacts/tests`.
 
@@ -46,7 +48,7 @@ Taken from this package's own tests, which compile and run on every release, and
 
 ```osy
 app Studio {
-  use Osysharp.Artifacts@0;
+  use Osysharp.Artifacts@1;
   use Osysharp.Storage;
   use Osysharp.Ui;
   model "model/**/*.osy";
@@ -83,7 +85,6 @@ From [the reference page](https://osysharp.com/reference/ui/artifacts-kit/).
 using Osysharp.Identity;
 using Osysharp.Storage;
 using Osysharp.Artifacts;
-using Studio;
 
 [Test(Checkout)]
 void a_new_version_keeps_the_old() {
@@ -91,23 +92,23 @@ void a_new_version_keeps_the_old() {
   Guid id;
   runas (Ann) {
     design = CheckoutId();
-    id = PublishArtifact("Design", design, "index.html", "text/html", Encoding.UTF8.GetBytes("<h1>One</h1>")).Id;
+    id = Artifact.Publish("Design", design, "index.html", "text/html", Encoding.UTF8.GetBytes("<h1>One</h1>")).Id;
     UnitOfWork.Commit();
   }
   runas (Rui) {
-    CommentOnArtifact(Artifact.Single(a => a.Id == id), 1, "The pay button is too small.", 0.5m, 0.25m);
+    ArtifactComment.OnArtifact(Artifact.Single(a => a.Id == id), 1, "The pay button is too small.", 0.5m, 0.25m);
     UnitOfWork.Commit();
   }
   runas (Ann) {
-    var again = PublishArtifact("Design", design, "index.html", "text/html", Encoding.UTF8.GetBytes("<h1>Two</h1>"));
+    var again = Artifact.Publish("Design", design, "index.html", "text/html", Encoding.UTF8.GetBytes("<h1>Two</h1>"));
     UnitOfWork.Commit();
     Assert.Equal(id, again.Id);
-    Assert.Throws<ValidationException>(() => PublishArtifact("Design", design, "shot.png", "image/png", Encoding.UTF8.GetBytes("<script>1</script>")));
-    Assert.Throws<ValidationException>(() => PublishArtifact("Design", design, "index.html", "text/plain", Encoding.UTF8.GetBytes("two")));
+    Assert.Throws<ValidationException>(() => Artifact.Publish("Design", design, "shot.png", "image/png", Encoding.UTF8.GetBytes("<script>1</script>")));
+    Assert.Throws<ValidationException>(() => Artifact.Publish("Design", design, "index.html", "text/plain", Encoding.UTF8.GetBytes("two")));
   }
   runas (Rui) {
     var artifact = Artifact.Single(a => a.Id == id);
-    var versions = ArtifactVersions(artifact);
+    var versions = artifact.Versions();
     Assert.Equal(2, versions.Count);
     Assert.Equal(1, versions[0].Version);
     Assert.Equal(Crypto.Sha256Hex("<h1>One</h1>"), versions[0].ContentHash);
@@ -132,7 +133,6 @@ From [`tests/artifacts.test.osy`](tests/artifacts.test.osy).
 using Osysharp.Identity;
 using Osysharp.Storage;
 using Osysharp.Artifacts;
-using Studio;
 
 [Test(Checkout)]
 void a_bundles_relative_files_load_under_its_entrys_address() {
@@ -142,26 +142,26 @@ void a_bundles_relative_files_load_under_its_entrys_address() {
   Guid version;
   runas (Ann) {
     var design = CheckoutId();
-    var files = new List<ArtifactFile>();
-    files.Add(new ArtifactFile { Path = "app.js", ContentType = "text/javascript", Bytes = Encoding.UTF8.GetBytes("document.title = 'ran';") });
-    files.Add(new ArtifactFile { Path = "css/site.css", ContentType = "text/css", Bytes = Encoding.UTF8.GetBytes("body { margin: 0 }") });
-    files.Add(new ArtifactFile { Path = "img/dot.png", ContentType = "image/png", Bytes = dot });
-    id = PublishArtifactBundle("Design", design, "index.html", Encoding.UTF8.GetBytes(page), files).Id;
+    var files = new List<ArtifactAsset.BundleFile>();
+    files.Add(new ArtifactAsset.BundleFile { Path = "app.js", ContentType = "text/javascript", Bytes = Encoding.UTF8.GetBytes("document.title = 'ran';") });
+    files.Add(new ArtifactAsset.BundleFile { Path = "css/site.css", ContentType = "text/css", Bytes = Encoding.UTF8.GetBytes("body { margin: 0 }") });
+    files.Add(new ArtifactAsset.BundleFile { Path = "img/dot.png", ContentType = "image/png", Bytes = dot });
+    id = ArtifactAsset.PublishBundle("Design", design, "index.html", Encoding.UTF8.GetBytes(page), files).Id;
     UnitOfWork.Commit();
 
-    var bad = new List<ArtifactFile>();
-    bad.Add(new ArtifactFile { Path = "../secret.js", ContentType = "text/javascript", Bytes = Encoding.UTF8.GetBytes("1") });
-    Assert.Throws<ValidationException>(() => PublishArtifactBundle("Design", design, "other.html", Encoding.UTF8.GetBytes(page), bad));
-    var json = new List<ArtifactFile>();
-    json.Add(new ArtifactFile { Path = "data.json", ContentType = "application/json", Bytes = Encoding.UTF8.GetBytes("{}") });
-    Assert.Throws<ValidationException>(() => PublishArtifactBundle("Design", design, "other.html", Encoding.UTF8.GetBytes(page), json));
-    var lie = new List<ArtifactFile>();
-    lie.Add(new ArtifactFile { Path = "app.js", ContentType = "text/javascript", Bytes = dot });
-    Assert.Throws<ValidationException>(() => PublishArtifactBundle("Design", design, "other.html", Encoding.UTF8.GetBytes(page), lie));
+    var bad = new List<ArtifactAsset.BundleFile>();
+    bad.Add(new ArtifactAsset.BundleFile { Path = "../secret.js", ContentType = "text/javascript", Bytes = Encoding.UTF8.GetBytes("1") });
+    Assert.Throws<ValidationException>(() => ArtifactAsset.PublishBundle("Design", design, "other.html", Encoding.UTF8.GetBytes(page), bad));
+    var json = new List<ArtifactAsset.BundleFile>();
+    json.Add(new ArtifactAsset.BundleFile { Path = "data.json", ContentType = "application/json", Bytes = Encoding.UTF8.GetBytes("{}") });
+    Assert.Throws<ValidationException>(() => ArtifactAsset.PublishBundle("Design", design, "other.html", Encoding.UTF8.GetBytes(page), json));
+    var lie = new List<ArtifactAsset.BundleFile>();
+    lie.Add(new ArtifactAsset.BundleFile { Path = "app.js", ContentType = "text/javascript", Bytes = dot });
+    Assert.Throws<ValidationException>(() => ArtifactAsset.PublishBundle("Design", design, "other.html", Encoding.UTF8.GetBytes(page), lie));
   }
   runas (Rui) {
     var artifact = Artifact.Single(a => a.Id == id);
-    Assert.Equal(3, ArtifactAssets(artifact, artifact.File.CurrentVersion.Version).Count);
+    Assert.Equal(3, artifact.Assets(artifact.File.CurrentVersion.Version).Count);
     version = artifact.File.CurrentVersion.Id;
     var url = SignedFor(version, Api.TokenFor(Rui));
     Assert.StartsWith("/_artifacts/" + artifact.File.CurrentVersion.Id.ToString() + "/", url);

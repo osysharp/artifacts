@@ -1,0 +1,43 @@
+namespace Osysharp.Artifacts;
+
+using Osysharp.Storage;
+
+/// A comment on one version of an artifact — at a point of it when `X`/`Y` are given (fractions of the frame, 0–1).
+public entity ArtifactComment {
+  [Required, Immutable, Index] Artifact Artifact;
+  /// The version it is about: a comment stays with the version it was written on.
+  [Required, Immutable] int Version;
+  [Required, Immutable, MaxLength(4000), Classification(Personal.Content)] string Text;
+  [Immutable] decimal? X;
+  [Immutable] decimal? Y;
+  bool Resolved = false;
+  [CreatedBy] Guid? Author;
+  [CreatedAt] DateTime At;
+
+  security {
+    allow read when IsAuthenticated where ReadsArtifactsOf(Artifact.SubjectType, Artifact.SubjectId);
+    allow create, update when IsAuthenticated where CommentsOnArtifactsOf(Artifact.SubjectType, Artifact.SubjectId);
+    deny create except via ArtifactComment.OnArtifact;
+    deny update except via ArtifactComment.Resolve;
+    deny delete;
+  }
+
+  /// ⭐ COMMENT ON ONE VERSION OF AN ARTIFACT — at a point of it when `x` and `y` are given, each a fraction of the frame.
+  [Server, Authorize(IsAuthenticated)]
+  public static ArtifactComment OnArtifact(Artifact artifact, int version, string text, decimal? x = null, decimal? y = null) {
+    var said = text.Trim();
+    if (said == "") { throw new ValidationException("Write something first."); }
+    if (said.Length > 4000) { throw new ValidationException("A comment is at most 4000 characters."); }
+    if (!artifact.File.Versions.Any(v => v.Version == version)) { throw new ValidationException($"{artifact.Name} has no version {version}."); }
+    if ((x == null) != (y == null) || (x != null && (x! < 0 || x! > 1 || y! < 0 || y! > 1))) {
+      throw new ValidationException("A point is given as both x and y, each between 0 and 1.");
+    }
+    return new ArtifactComment { Artifact = artifact, Version = version, Text = said, X = x, Y = y };
+  }
+
+  /// Mark a comment resolved — or open again.
+  [Server, Authorize(IsAuthenticated)]
+  public void Resolve(bool resolved = true) {
+    this.Resolved = resolved;
+  }
+}

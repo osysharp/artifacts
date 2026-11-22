@@ -1,0 +1,17 @@
+# restructure.map — written by `osy restructure --apply`: old key -> new key, one line per moved declaration.
+# Read by the deploy and by repository checks that key by name. Keep it until the deployed move has passed them.
+Osysharp.Artifacts.ArtifactAssetTypes -> Osysharp.Artifacts.ArtifactAsset.Types
+Osysharp.Artifacts.ArtifactAssets -> Osysharp.Artifacts.Artifact.Assets
+Osysharp.Artifacts.ArtifactBytesLie -> Osysharp.Artifacts.Artifact.BytesLie
+Osysharp.Artifacts.ArtifactFile -> Osysharp.Artifacts.ArtifactAsset.BundleFile
+Osysharp.Artifacts.ArtifactIsText -> Osysharp.Artifacts.Artifact.IsText
+Osysharp.Artifacts.ArtifactKindOf -> Osysharp.Artifacts.Artifact.KindOf
+Osysharp.Artifacts.ArtifactLeaf -> Osysharp.Artifacts.ArtifactAsset.Leaf
+Osysharp.Artifacts.ArtifactMagic -> Osysharp.Artifacts.Artifact.FormatOf
+Osysharp.Artifacts.ArtifactPathRefusal -> Osysharp.Artifacts.ArtifactAsset.PathRefusal
+Osysharp.Artifacts.ArtifactTypes -> Osysharp.Artifacts.Artifact.Types
+Osysharp.Artifacts.ArtifactVersions -> Osysharp.Artifacts.Artifact.Versions
+Osysharp.Artifacts.CommentOnArtifact -> Osysharp.Artifacts.ArtifactComment.OnArtifact
+Osysharp.Artifacts.PublishArtifact -> Osysharp.Artifacts.Artifact.Publish
+Osysharp.Artifacts.PublishArtifactBundle -> Osysharp.Artifacts.ArtifactAsset.PublishBundle
+Osysharp.Artifacts.ResolveArtifactComment -> Osysharp.Artifacts.ArtifactComment.Resolve

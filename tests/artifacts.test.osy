@@ -2,7 +2,6 @@
 using Osysharp.Identity;
 using Osysharp.Storage;
 using Osysharp.Artifacts;
-using Studio;
 
 /// The checkout design: Ann (a designer) and Rui (a reviewer) are on it; Bo is at the studio and not on it.
 [TestFixture]
@@ -32,23 +31,23 @@ void a_new_version_keeps_the_old() {
   Guid id;
   runas (Ann) {
     design = CheckoutId();
-    id = PublishArtifact("Design", design, "index.html", "text/html", Encoding.UTF8.GetBytes("<h1>One</h1>")).Id;
+    id = Artifact.Publish("Design", design, "index.html", "text/html", Encoding.UTF8.GetBytes("<h1>One</h1>")).Id;
     UnitOfWork.Commit();
   }
   runas (Rui) {
-    CommentOnArtifact(Artifact.Single(a => a.Id == id), 1, "The pay button is too small.", 0.5m, 0.25m);
+    ArtifactComment.OnArtifact(Artifact.Single(a => a.Id == id), 1, "The pay button is too small.", 0.5m, 0.25m);
     UnitOfWork.Commit();
   }
   runas (Ann) {
-    var again = PublishArtifact("Design", design, "index.html", "text/html", Encoding.UTF8.GetBytes("<h1>Two</h1>"));
+    var again = Artifact.Publish("Design", design, "index.html", "text/html", Encoding.UTF8.GetBytes("<h1>Two</h1>"));
     UnitOfWork.Commit();
     Assert.Equal(id, again.Id);
-    Assert.Throws<ValidationException>(() => PublishArtifact("Design", design, "shot.png", "image/png", Encoding.UTF8.GetBytes("<script>1</script>")));
-    Assert.Throws<ValidationException>(() => PublishArtifact("Design", design, "index.html", "text/plain", Encoding.UTF8.GetBytes("two")));
+    Assert.Throws<ValidationException>(() => Artifact.Publish("Design", design, "shot.png", "image/png", Encoding.UTF8.GetBytes("<script>1</script>")));
+    Assert.Throws<ValidationException>(() => Artifact.Publish("Design", design, "index.html", "text/plain", Encoding.UTF8.GetBytes("two")));
   }
   runas (Rui) {
     var artifact = Artifact.Single(a => a.Id == id);
-    var versions = ArtifactVersions(artifact);
+    var versions = artifact.Versions();
     Assert.Equal(2, versions.Count);
     Assert.Equal(1, versions[0].Version);
     Assert.Equal(Crypto.Sha256Hex("<h1>One</h1>"), versions[0].ContentHash);
@@ -95,26 +94,26 @@ void a_bundles_relative_files_load_under_its_entrys_address() {
   Guid version;
   runas (Ann) {
     var design = CheckoutId();
-    var files = new List<ArtifactFile>();
-    files.Add(new ArtifactFile { Path = "app.js", ContentType = "text/javascript", Bytes = Encoding.UTF8.GetBytes("document.title = 'ran';") });
-    files.Add(new ArtifactFile { Path = "css/site.css", ContentType = "text/css", Bytes = Encoding.UTF8.GetBytes("body { margin: 0 }") });
-    files.Add(new ArtifactFile { Path = "img/dot.png", ContentType = "image/png", Bytes = dot });
-    id = PublishArtifactBundle("Design", design, "index.html", Encoding.UTF8.GetBytes(page), files).Id;
+    var files = new List<ArtifactAsset.BundleFile>();
+    files.Add(new ArtifactAsset.BundleFile { Path = "app.js", ContentType = "text/javascript", Bytes = Encoding.UTF8.GetBytes("document.title = 'ran';") });
+    files.Add(new ArtifactAsset.BundleFile { Path = "css/site.css", ContentType = "text/css", Bytes = Encoding.UTF8.GetBytes("body { margin: 0 }") });
+    files.Add(new ArtifactAsset.BundleFile { Path = "img/dot.png", ContentType = "image/png", Bytes = dot });
+    id = ArtifactAsset.PublishBundle("Design", design, "index.html", Encoding.UTF8.GetBytes(page), files).Id;
     UnitOfWork.Commit();
 
-    var bad = new List<ArtifactFile>();
-    bad.Add(new ArtifactFile { Path = "../secret.js", ContentType = "text/javascript", Bytes = Encoding.UTF8.GetBytes("1") });
-    Assert.Throws<ValidationException>(() => PublishArtifactBundle("Design", design, "other.html", Encoding.UTF8.GetBytes(page), bad));
-    var json = new List<ArtifactFile>();
-    json.Add(new ArtifactFile { Path = "data.json", ContentType = "application/json", Bytes = Encoding.UTF8.GetBytes("{}") });
-    Assert.Throws<ValidationException>(() => PublishArtifactBundle("Design", design, "other.html", Encoding.UTF8.GetBytes(page), json));
-    var lie = new List<ArtifactFile>();
-    lie.Add(new ArtifactFile { Path = "app.js", ContentType = "text/javascript", Bytes = dot });
-    Assert.Throws<ValidationException>(() => PublishArtifactBundle("Design", design, "other.html", Encoding.UTF8.GetBytes(page), lie));
+    var bad = new List<ArtifactAsset.BundleFile>();
+    bad.Add(new ArtifactAsset.BundleFile { Path = "../secret.js", ContentType = "text/javascript", Bytes = Encoding.UTF8.GetBytes("1") });
+    Assert.Throws<ValidationException>(() => ArtifactAsset.PublishBundle("Design", design, "other.html", Encoding.UTF8.GetBytes(page), bad));
+    var json = new List<ArtifactAsset.BundleFile>();
+    json.Add(new ArtifactAsset.BundleFile { Path = "data.json", ContentType = "application/json", Bytes = Encoding.UTF8.GetBytes("{}") });
+    Assert.Throws<ValidationException>(() => ArtifactAsset.PublishBundle("Design", design, "other.html", Encoding.UTF8.GetBytes(page), json));
+    var lie = new List<ArtifactAsset.BundleFile>();
+    lie.Add(new ArtifactAsset.BundleFile { Path = "app.js", ContentType = "text/javascript", Bytes = dot });
+    Assert.Throws<ValidationException>(() => ArtifactAsset.PublishBundle("Design", design, "other.html", Encoding.UTF8.GetBytes(page), lie));
   }
   runas (Rui) {
     var artifact = Artifact.Single(a => a.Id == id);
-    Assert.Equal(3, ArtifactAssets(artifact, artifact.File.CurrentVersion.Version).Count);
+    Assert.Equal(3, artifact.Assets(artifact.File.CurrentVersion.Version).Count);
     version = artifact.File.CurrentVersion.Id;
     var url = SignedFor(version, Api.TokenFor(Rui));
     Assert.StartsWith("/_artifacts/" + artifact.File.CurrentVersion.Id.ToString() + "/", url);

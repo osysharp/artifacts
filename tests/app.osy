@@ -3,7 +3,7 @@
 app ArtifactsKitTests {
   model "model/**/*.osy";
   tests "**/*.test.osy";
-  use Osysharp.Artifacts@0;
+  use Osysharp.Artifacts@1;
   use Osysharp.Identity;
   use Osysharp.Storage;
   use Osysharp.Ui;
