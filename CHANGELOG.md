@@ -1,5 +1,14 @@
 # Osysharp.Artifacts — changes
 
+## 1.1.0
+- Spots (PLATFORM-694). `ArtifactView` takes `spots`, `pins`, `focus` and `onSpot`: with `spots: true` an HTML artifact is
+  served with the platform's spot script, a click while `onSpot` is bound reports the `ArtifactSpot` the reader picked
+  (its key, the point within it and its first words), `pins` (`ArtifactPin[]`) are drawn at their spots with labels of at
+  most 3 characters, and `focus` scrolls to a spot. The frame's sandbox and the artifact's CSP are unchanged.
+- `ArtifactComment` has a `Spot` ("page" unless one is named), and `ArtifactComment.OnArtifact` takes `spot` after `y`;
+  `ArtifactComment.SpotRefusal(spot)` says what is wrong with a key.
+- Needs platform 0.25.2 (`minPlatform "0.25.2"`).
+
 ## 1.0.0
 - Grouped into classes (`osy restructure`). Calls move:
   - `ArtifactAssetTypes()` → `ArtifactAsset.Types()`

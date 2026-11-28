@@ -137,3 +137,28 @@ void a_bundles_relative_files_load_under_its_entrys_address() {
     Assert.Equal("", SignedFor(version, Api.TokenFor(Bo)));
   }
 }
+
+/// ⭐ A COMMENT NAMES ITS SPOT (PLATFORM-694). Rui comments on the checkout prototype at the spot a frame reported — the pay
+/// button — and at a point of it; a comment that names none is on `page`, the whole prototype. A spot that is not a key a
+/// frame could report is refused, and a bundle may not put a file where the platform's spot script is served.
+[Test(Checkout)]
+void a_comment_names_its_spot() {
+  Guid id;
+  runas (Ann) {
+    id = Artifact.Publish("Design", CheckoutId(), "spots.html", "text/html", Encoding.UTF8.GetBytes("<h1>Pay</h1><button id=\"pay\">Pay</button>")).Id;
+    var spotPath = new List<ArtifactAsset.BundleFile>();
+    spotPath.Add(new ArtifactAsset.BundleFile { Path = ".osy/spots.js", ContentType = "text/javascript", Bytes = Encoding.UTF8.GetBytes("1") });
+    Assert.Throws<ValidationException>(() => ArtifactAsset.PublishBundle("Design", CheckoutId(), "taken.html", Encoding.UTF8.GetBytes("<p>t</p>"), spotPath));
+    UnitOfWork.Commit();
+  }
+  runas (Rui) {
+    var artifact = Artifact.Single(a => a.Id == id);
+    ArtifactComment.OnArtifact(artifact, 1, "Make it bigger.", 0.5m, 0.25m, "pay");
+    ArtifactComment.OnArtifact(artifact, 1, "Overall fine.");
+    Assert.Throws<ValidationException>(() => ArtifactComment.OnArtifact(artifact, 1, "Here.", null, null, "not a key"));
+    UnitOfWork.Commit();
+    var said = ArtifactComment.Where(c => c.Artifact == artifact).OrderBy(c => c.Text).ToList();
+    Assert.Equal("pay", said[0].Spot);
+    Assert.Equal("page", said[1].Spot);
+  }
+}

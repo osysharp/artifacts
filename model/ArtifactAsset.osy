@@ -78,7 +78,8 @@ public entity ArtifactAsset {
     return artifact;
   }
 
-  /// What is wrong with a bundle file's path — or "".
+  /// What is wrong with a bundle file's path — or "". Nothing hidden: a part that starts with `.` is refused, which also
+  /// keeps `.osy/` the platform's own (its spot script, `.osy/spots.js`, which the route answers before any bundle file).
   public static string PathRefusal(string path) {
     if (path == "" || path.Length > 200) { return "A bundle's file has a relative path of at most 200 characters: `img/logo.png`."; }
     var parts = path.Split("/");

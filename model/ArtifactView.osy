@@ -12,10 +12,19 @@ using Osysharp.Ui;
 /// With a viewer base (`ArtifactsSetup.ViewerBase`, or `viewer:` here) the artifact is served from an origin of its own,
 /// `https://<artifact>-<placement>.<base>/…` — never the app's site, never another artifact's origin.
 ///
+/// SPOT MODE (`spots: true`, an HTML artifact): while `onSpot` is bound, a click in the frame picks a SPOT instead of
+/// pressing what is under it, and `onSpot` runs with the `ArtifactSpot` — the nearest element with a `data-spot` key,
+/// else an `id`, else a heading, else `page` — and the point within it. `pins` are drawn in the frame at their spots,
+/// labelled with at most 3 characters (a thread's number: the artifact's own script can read what is drawn in it), and
+/// `focus` scrolls the frame to a spot and rings it. The sandbox is the same as without it.
+///
 ///     ArtifactView(artifact.Versions().Last(), h: 720);
-public component ArtifactView(FileVersion version, int h = 640, string? viewer = null) {
+///     ArtifactView(version, spots: true, pins: pins, focus: open, onSpot: commenting ? Picked : null);
+public component ArtifactView(FileVersion version, int h = 640, string? viewer = null, bool spots = false,
+                              ArtifactPin[]? pins = null, string focus = "", Action<ArtifactSpot>? onSpot = null) {
   render {
     ArtifactFrame(version: version.Id, title: version.Name + ", version " + version.Version, h: h,
-                  viewer: viewer ?? App.Setting<ArtifactsSetup>().ViewerBase);
+                  viewer: viewer ?? App.Setting<ArtifactsSetup>().ViewerBase,
+                  spots: spots, pins: pins, focus: focus, onSpot: onSpot);
   }
 }

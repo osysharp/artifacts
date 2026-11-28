@@ -47,6 +47,36 @@ Reference: `osy docs ui-artifacts-kit`. Tests: `osy test kits/artifacts/tests`.
 Taken from this package's own tests, which compile and run on every release, and from its reference page, whose examples are compiled when the site is built.
 
 ```osy
+using Osysharp.Identity;
+using Osysharp.Storage;
+using Osysharp.Artifacts;
+
+[Test(Checkout)]
+void a_comment_names_its_spot() {
+  Guid id;
+  runas (Ann) {
+    id = Artifact.Publish("Design", CheckoutId(), "spots.html", "text/html", Encoding.UTF8.GetBytes("<h1>Pay</h1><button id=\"pay\">Pay</button>")).Id;
+    var spotPath = new List<ArtifactAsset.BundleFile>();
+    spotPath.Add(new ArtifactAsset.BundleFile { Path = ".osy/spots.js", ContentType = "text/javascript", Bytes = Encoding.UTF8.GetBytes("1") });
+    Assert.Throws<ValidationException>(() => ArtifactAsset.PublishBundle("Design", CheckoutId(), "taken.html", Encoding.UTF8.GetBytes("<p>t</p>"), spotPath));
+    UnitOfWork.Commit();
+  }
+  runas (Rui) {
+    var artifact = Artifact.Single(a => a.Id == id);
+    ArtifactComment.OnArtifact(artifact, 1, "Make it bigger.", 0.5m, 0.25m, "pay");
+    ArtifactComment.OnArtifact(artifact, 1, "Overall fine.");
+    Assert.Throws<ValidationException>(() => ArtifactComment.OnArtifact(artifact, 1, "Here.", null, null, "not a key"));
+    UnitOfWork.Commit();
+    var said = ArtifactComment.Where(c => c.Artifact == artifact).OrderBy(c => c.Text).ToList();
+    Assert.Equal("pay", said[0].Spot);
+    Assert.Equal("page", said[1].Spot);
+  }
+}
+```
+
+From [`tests/artifacts.test.osy`](tests/artifacts.test.osy).
+
+```osy
 app Studio {
   use Osysharp.Artifacts@1;
   use Osysharp.Storage;
@@ -80,114 +110,6 @@ component DesignArtifacts(Guid id) {
 ```
 
 From [the reference page](https://osysharp.com/reference/ui/artifacts-kit/).
-
-```osy
-using Osysharp.Identity;
-using Osysharp.Storage;
-using Osysharp.Artifacts;
-
-[Test(Checkout)]
-void a_new_version_keeps_the_old() {
-  Guid design;
-  Guid id;
-  runas (Ann) {
-    design = CheckoutId();
-    id = Artifact.Publish("Design", design, "index.html", "text/html", Encoding.UTF8.GetBytes("<h1>One</h1>")).Id;
-    UnitOfWork.Commit();
-  }
-  runas (Rui) {
-    ArtifactComment.OnArtifact(Artifact.Single(a => a.Id == id), 1, "The pay button is too small.", 0.5m, 0.25m);
-    UnitOfWork.Commit();
-  }
-  runas (Ann) {
-    var again = Artifact.Publish("Design", design, "index.html", "text/html", Encoding.UTF8.GetBytes("<h1>Two</h1>"));
-    UnitOfWork.Commit();
-    Assert.Equal(id, again.Id);
-    Assert.Throws<ValidationException>(() => Artifact.Publish("Design", design, "shot.png", "image/png", Encoding.UTF8.GetBytes("<script>1</script>")));
-    Assert.Throws<ValidationException>(() => Artifact.Publish("Design", design, "index.html", "text/plain", Encoding.UTF8.GetBytes("two")));
-  }
-  runas (Rui) {
-    var artifact = Artifact.Single(a => a.Id == id);
-    var versions = artifact.Versions();
-    Assert.Equal(2, versions.Count);
-    Assert.Equal(1, versions[0].Version);
-    Assert.Equal(Crypto.Sha256Hex("<h1>One</h1>"), versions[0].ContentHash);
-    Assert.Equal(2, versions[1].Version);
-    Assert.Equal(Crypto.Sha256Hex("<h1>Two</h1>"), versions[1].ContentHash);
-    Assert.Equal(versions[1].Id, artifact.File.CurrentVersion.Id);
-    Assert.Equal("<h1>Two</h1>", Encoding.UTF8.GetString(File.ReadAllBytes(artifact.File)));
-    var said = ArtifactComment.Where(c => c.Artifact == artifact).ToList();
-    Assert.Equal(1, said.Count);
-    Assert.Equal(1, said[0].Version);
-  }
-  runas (Bo) {
-    Assert.False(Artifact.Any(a => a.Id == id));
-    Assert.False(ArtifactComment.Any(c => c.Artifact.Id == id));
-  }
-}
-```
-
-From [`tests/artifacts.test.osy`](tests/artifacts.test.osy).
-
-```osy
-using Osysharp.Identity;
-using Osysharp.Storage;
-using Osysharp.Artifacts;
-
-[Test(Checkout)]
-void a_bundles_relative_files_load_under_its_entrys_address() {
-  var page = "<!doctype html><link rel=stylesheet href=\"css/site.css\"><img src=\"img/dot.png\"><script src=\"app.js\"></script>";
-  var dot = Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==");
-  Guid id;
-  Guid version;
-  runas (Ann) {
-    var design = CheckoutId();
-    var files = new List<ArtifactAsset.BundleFile>();
-    files.Add(new ArtifactAsset.BundleFile { Path = "app.js", ContentType = "text/javascript", Bytes = Encoding.UTF8.GetBytes("document.title = 'ran';") });
-    files.Add(new ArtifactAsset.BundleFile { Path = "css/site.css", ContentType = "text/css", Bytes = Encoding.UTF8.GetBytes("body { margin: 0 }") });
-    files.Add(new ArtifactAsset.BundleFile { Path = "img/dot.png", ContentType = "image/png", Bytes = dot });
-    id = ArtifactAsset.PublishBundle("Design", design, "index.html", Encoding.UTF8.GetBytes(page), files).Id;
-    UnitOfWork.Commit();
-
-    var bad = new List<ArtifactAsset.BundleFile>();
-    bad.Add(new ArtifactAsset.BundleFile { Path = "../secret.js", ContentType = "text/javascript", Bytes = Encoding.UTF8.GetBytes("1") });
-    Assert.Throws<ValidationException>(() => ArtifactAsset.PublishBundle("Design", design, "other.html", Encoding.UTF8.GetBytes(page), bad));
-    var json = new List<ArtifactAsset.BundleFile>();
-    json.Add(new ArtifactAsset.BundleFile { Path = "data.json", ContentType = "application/json", Bytes = Encoding.UTF8.GetBytes("{}") });
-    Assert.Throws<ValidationException>(() => ArtifactAsset.PublishBundle("Design", design, "other.html", Encoding.UTF8.GetBytes(page), json));
-    var lie = new List<ArtifactAsset.BundleFile>();
-    lie.Add(new ArtifactAsset.BundleFile { Path = "app.js", ContentType = "text/javascript", Bytes = dot });
-    Assert.Throws<ValidationException>(() => ArtifactAsset.PublishBundle("Design", design, "other.html", Encoding.UTF8.GetBytes(page), lie));
-  }
-  runas (Rui) {
-    var artifact = Artifact.Single(a => a.Id == id);
-    Assert.Equal(3, artifact.Assets(artifact.File.CurrentVersion.Version).Count);
-    version = artifact.File.CurrentVersion.Id;
-    var url = SignedFor(version, Api.TokenFor(Rui));
-    Assert.StartsWith("/_artifacts/" + artifact.File.CurrentVersion.Id.ToString() + "/", url);
-    Assert.EndsWith("/index.html", url);
-    var folder = url.Substring(0, url.Length - "index.html".Length);
-
-    var entry = Api.Get(url);
-    Assert.Equal(200, entry.StatusCode);
-    Assert.Equal(page, entry.Body);
-    var script = Api.Get(folder + "app.js");
-    Assert.Equal(200, script.StatusCode);
-    Assert.Equal("document.title = 'ran';", script.Body);
-    Assert.StartsWith("text/javascript", HeaderOf(script, "Content-Type"));
-    Assert.StartsWith("sandbox", HeaderOf(script, "Content-Security-Policy"));
-    Assert.Contains("connect-src 'none'", HeaderOf(entry, "Content-Security-Policy"));
-    Assert.Equal(200, Api.Get(folder + "css/site.css").StatusCode);
-    Assert.Equal(200, Api.Get(folder + "img/dot.png").StatusCode);
-    Assert.Equal(404, Api.Get(folder + "img/other.png").StatusCode);
-  }
-  runas (Bo) {
-    Assert.Equal("", SignedFor(version, Api.TokenFor(Bo)));
-  }
-}
-```
-
-From [`tests/artifacts.test.osy`](tests/artifacts.test.osy).
 
 ## Learn more
 

@@ -2,12 +2,16 @@ namespace Osysharp.Artifacts;
 
 using Osysharp.Storage;
 
-/// A comment on one version of an artifact — at a point of it when `X`/`Y` are given (fractions of the frame, 0–1).
+/// A comment on one version of an artifact — at a spot of it (`page`, the whole artifact, unless one is named), and at a
+/// point of that spot when `X`/`Y` are given (fractions of it, 0–1). A spot is what `ArtifactView(spots: true, onSpot:)`
+/// reports a reader clicked (`ArtifactSpot`), so a comment and a click name places the same way.
 public entity ArtifactComment {
   [Required, Immutable, Index] Artifact Artifact;
   /// The version it is about: a comment stays with the version it was written on.
   [Required, Immutable] int Version;
   [Required, Immutable, MaxLength(4000), Classification(Personal.Content)] string Text;
+  /// The spot it is at: letters, digits, `_` and `-`, at most 120 characters; `page` for the whole artifact.
+  [Immutable, MaxLength(120)] string Spot = "page";
   [Immutable] decimal? X;
   [Immutable] decimal? Y;
   bool Resolved = false;
@@ -22,9 +26,11 @@ public entity ArtifactComment {
     deny delete;
   }
 
-  /// ⭐ COMMENT ON ONE VERSION OF AN ARTIFACT — at a point of it when `x` and `y` are given, each a fraction of the frame.
+  /// ⭐ COMMENT ON ONE VERSION OF AN ARTIFACT — at `spot` (the whole artifact, `page`, unless one is named: what
+  /// `ArtifactSpot.Spot` reports), and at a point of it when `x` and `y` are given, each a fraction of that spot.
   [Server, Authorize(IsAuthenticated)]
-  public static ArtifactComment OnArtifact(Artifact artifact, int version, string text, decimal? x = null, decimal? y = null) {
+  public static ArtifactComment OnArtifact(Artifact artifact, int version, string text, decimal? x = null, decimal? y = null,
+                                           string spot = "page") {
     var said = text.Trim();
     if (said == "") { throw new ValidationException("Write something first."); }
     if (said.Length > 4000) { throw new ValidationException("A comment is at most 4000 characters."); }
@@ -32,7 +38,20 @@ public entity ArtifactComment {
     if ((x == null) != (y == null) || (x != null && (x! < 0 || x! > 1 || y! < 0 || y! > 1))) {
       throw new ValidationException("A point is given as both x and y, each between 0 and 1.");
     }
-    return new ArtifactComment { Artifact = artifact, Version = version, Text = said, X = x, Y = y };
+    var at = ArtifactComment.SpotRefusal(spot);
+    if (at != "") { throw new ValidationException(at); }
+    return new ArtifactComment { Artifact = artifact, Version = version, Text = said, Spot = spot, X = x, Y = y };
+  }
+
+  /// What is wrong with a spot's key — or "". A key is 1 to 120 letters, digits, `_` and `-`, as a frame reports it.
+  public static string SpotRefusal(string spot) {
+    if (spot == "" || spot.Length > 120) { return "A spot is named by 1 to 120 letters, digits, `_` and `-`; `page` is the whole artifact."; }
+    for (var i = 0; i < spot.Length; i++) {
+      if (!("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-".Contains(spot.Substring(i, 1)))) {
+        return "A spot is named by 1 to 120 letters, digits, `_` and `-`; `page` is the whole artifact.";
+      }
+    }
+    return "";
   }
 
   /// Mark a comment resolved — or open again.
